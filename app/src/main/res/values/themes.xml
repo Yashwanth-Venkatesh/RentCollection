@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Base theme for a pure Compose app — no AppCompat dependency needed -->
+    <style name="Theme.RentCollection" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:statusBarColor">@color/green_700</item>
+        <item name="android:windowBackground">@color/white</item>
+    </style>
+</resources>
