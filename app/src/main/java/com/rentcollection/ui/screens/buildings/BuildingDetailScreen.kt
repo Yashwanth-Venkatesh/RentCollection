@@ -34,7 +34,16 @@ fun BuildingDetailScreen(
     viewModel: BuildingDetailViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
     var showMonthPicker by remember { mutableStateOf(false) }
+
+    LaunchedEffect(state.errorMessage) {
+        val msg = state.errorMessage
+        if (msg != null) {
+            snackbarHostState.showSnackbar(message = msg, duration = SnackbarDuration.Long)
+            viewModel.clearError()
+        }
+    }
 
     if (showMonthPicker) {
         MonthYearPickerDialog(
@@ -46,6 +55,7 @@ fun BuildingDetailScreen(
     }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text(state.building?.name ?: "Building", fontWeight = FontWeight.Bold) },

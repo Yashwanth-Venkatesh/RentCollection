@@ -34,7 +34,8 @@ data class BuildingDetailState(
     val totalPending: Double = 0.0,
     val selectedMonth: Int = Calendar.getInstance().get(Calendar.MONTH) + 1,
     val selectedYear: Int = Calendar.getInstance().get(Calendar.YEAR),
-    val isLoading: Boolean = true
+    val isLoading: Boolean = true,
+    val errorMessage: String? = null
 )
 
 @HiltViewModel
@@ -143,31 +144,37 @@ class BuildingDetailViewModel @Inject constructor(
 
     fun bulkMarkFloorPaid(floorId: String) {
         viewModelScope.launch {
-            val today = java.text.SimpleDateFormat("dd/MM/yyyy", java.util.Locale.getDefault()).format(java.util.Date())
-            val floor = _state.value.floors.find { it.floor.floorId == floorId } ?: return@launch
-            val month = _state.value.selectedMonth
-            val year = _state.value.selectedYear
-            floor.houses.forEach { hwp ->
-                if (!hwp.isPaid) {
-                    if (hwp.payment != null && hwp.payment.paymentId.isNotEmpty()) {
-                        paymentRepository.markAsReceived(hwp.payment.paymentId, today)
-                    } else {
-                        paymentRepository.recordPayment(
-                            Payment(
-                                houseId = hwp.house.houseId,
-                                buildingId = buildingId,
-                                floorId = floorId,
-                                houseNumber = hwp.house.houseNumber,
-                                amount = hwp.house.rentAmount,
-                                month = month,
-                                year = year,
-                                isReceived = true,
-                                paidDate = today
+            try {
+                val today = java.text.SimpleDateFormat("dd/MM/yyyy", java.util.Locale.getDefault()).format(java.util.Date())
+                val floor = _state.value.floors.find { it.floor.floorId == floorId } ?: return@launch
+                val month = _state.value.selectedMonth
+                val year = _state.value.selectedYear
+                floor.houses.forEach { hwp ->
+                    if (!hwp.isPaid) {
+                        if (hwp.payment != null && hwp.payment.paymentId.isNotEmpty()) {
+                            paymentRepository.markAsReceived(hwp.payment.paymentId, today)
+                        } else {
+                            paymentRepository.recordPayment(
+                                Payment(
+                                    houseId = hwp.house.houseId,
+                                    buildingId = buildingId,
+                                    floorId = floorId,
+                                    houseNumber = hwp.house.houseNumber,
+                                    amount = hwp.house.rentAmount,
+                                    month = month,
+                                    year = year,
+                                    isReceived = true,
+                                    paidDate = today
+                                )
                             )
-                        )
+                        }
                     }
                 }
+            } catch (e: Exception) {
+                _state.update { it.copy(errorMessage = e.message ?: "Failed to update payment") }
             }
         }
     }
+
+    fun clearError() = _state.update { it.copy(errorMessage = null) }
 }

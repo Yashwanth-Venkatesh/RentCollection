@@ -57,6 +57,15 @@ fun DashboardScreen(
     var showMonthPicker by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
 
+    // Error snackbar
+    LaunchedEffect(state.errorMessage) {
+        val msg = state.errorMessage
+        if (msg != null) {
+            snackbarHostState.showSnackbar(message = msg, duration = SnackbarDuration.Long)
+            viewModel.clearError()
+        }
+    }
+
     // Undo snackbar
     LaunchedEffect(state.undoPayment) {
         val p = state.undoPayment

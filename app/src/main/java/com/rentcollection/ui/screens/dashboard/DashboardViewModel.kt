@@ -43,7 +43,8 @@ data class DashboardState(
     val userName: String = "",
     val userRole: String = "",
     val undoPayment: Payment? = null,
-    val trendData: List<MonthlyTrend> = emptyList()
+    val trendData: List<MonthlyTrend> = emptyList(),
+    val errorMessage: String? = null
 )
 
 @HiltViewModel
@@ -57,7 +58,6 @@ class DashboardViewModel @Inject constructor(
     private val _selectedMonth = MutableStateFlow(Calendar.getInstance().get(Calendar.MONTH) + 1)
     private val _selectedYear = MutableStateFlow(Calendar.getInstance().get(Calendar.YEAR))
     private val _selectedBuildingId = MutableStateFlow<String?>(null)
-    private val _refreshTrigger = MutableStateFlow(0)
 
     private val _state = MutableStateFlow(DashboardState())
     val state: StateFlow<DashboardState> = _state
@@ -77,7 +77,7 @@ class DashboardViewModel @Inject constructor(
 
     private fun observeData() {
         viewModelScope.launch {
-            combine(_selectedMonth, _selectedYear, _selectedBuildingId, _refreshTrigger) { m, y, bid, _ ->
+            combine(_selectedMonth, _selectedYear, _selectedBuildingId) { m, y, bid ->
                 Triple(m, y, bid)
             }.collectLatest { (month, year, buildingId) ->
                 combine(
@@ -140,7 +140,7 @@ class DashboardViewModel @Inject constructor(
                     val pendingAmt = pending.sumOf { it.amount }
                     val total = collected + pendingAmt
 
-                    DashboardState(
+                    _state.value.copy(
                         isLoading = false,
                         selectedMonth = month,
                         selectedYear = year,
@@ -153,11 +153,7 @@ class DashboardViewModel @Inject constructor(
                             compareBy({ it.buildingName }, { it.houseNumber })
                         ),
                         buildings = buildings.sortedBy { it.name },
-                        selectedBuildingId = buildingId,
-                        userName = _state.value.userName,
-                        userRole = _state.value.userRole,
-                        undoPayment = _state.value.undoPayment,
-                        trendData = _state.value.trendData
+                        selectedBuildingId = buildingId
                     )
                 }.collect { newState ->
                     _state.value = newState
@@ -200,9 +196,8 @@ class DashboardViewModel @Inject constructor(
     }
 
     fun refresh() {
-        _state.update { it.copy(isRefreshing = true) }
-        _refreshTrigger.value++
         viewModelScope.launch {
+            _state.update { it.copy(isRefreshing = true) }
             delay(900)
             _state.update { it.copy(isRefreshing = false) }
         }
@@ -210,19 +205,23 @@ class DashboardViewModel @Inject constructor(
 
     fun markAsPaid(payment: Payment) {
         viewModelScope.launch {
-            val today = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date())
-            if (payment.paymentId.isNotEmpty()) {
-                paymentRepository.markAsReceived(payment.paymentId, today)
-                _state.update { it.copy(undoPayment = payment) }
-            } else {
-                val newId = paymentRepository.recordPayment(
-                    payment.copy(
-                        isReceived = true,
-                        paidDate = today,
-                        recordedBy = _state.value.userName
+            try {
+                val today = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date())
+                if (payment.paymentId.isNotEmpty()) {
+                    paymentRepository.markAsReceived(payment.paymentId, today)
+                    _state.update { it.copy(undoPayment = payment) }
+                } else {
+                    val newId = paymentRepository.recordPayment(
+                        payment.copy(
+                            isReceived = true,
+                            paidDate = today,
+                            recordedBy = _state.value.userName
+                        )
                     )
-                )
-                _state.update { it.copy(undoPayment = payment.copy(paymentId = newId)) }
+                    _state.update { it.copy(undoPayment = payment.copy(paymentId = newId)) }
+                }
+            } catch (e: Exception) {
+                _state.update { it.copy(errorMessage = e.message ?: "Failed to update payment") }
             }
         }
     }
@@ -238,6 +237,7 @@ class DashboardViewModel @Inject constructor(
     }
 
     fun clearUndo() = _state.update { it.copy(undoPayment = null) }
+    fun clearError() = _state.update { it.copy(errorMessage = null) }
 
     fun logout() = authRepository.logout()
 }

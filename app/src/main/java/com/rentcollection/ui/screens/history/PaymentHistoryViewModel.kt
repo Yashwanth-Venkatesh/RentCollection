@@ -30,7 +30,6 @@ class PaymentHistoryViewModel @Inject constructor(
     private val buildingRepository: BuildingRepository
 ) : ViewModel() {
 
-    private val _refreshTrigger = MutableStateFlow(0)
     private val _state = MutableStateFlow(PaymentHistoryState())
     val state: StateFlow<PaymentHistoryState> = _state
 
@@ -40,21 +39,19 @@ class PaymentHistoryViewModel @Inject constructor(
 
     private fun observeData() {
         viewModelScope.launch {
-            _refreshTrigger.collectLatest {
-                combine(
-                    paymentRepository.getAllPaymentsFlow(),
-                    buildingRepository.getBuildingsFlow()
-                ) { payments, buildings ->
-                    val s = _state.value
-                    s.copy(
-                        allPayments = payments,
-                        filteredPayments = applyFilters(payments, s.selectedBuildingId, s.selectedMonth, s.selectedYear),
-                        buildings = buildings,
-                        isLoading = false
-                    )
-                }.collect { newState ->
-                    _state.value = newState
-                }
+            combine(
+                paymentRepository.getAllPaymentsFlow(),
+                buildingRepository.getBuildingsFlow()
+            ) { payments, buildings ->
+                val s = _state.value
+                s.copy(
+                    allPayments = payments,
+                    filteredPayments = applyFilters(payments, s.selectedBuildingId, s.selectedMonth, s.selectedYear),
+                    buildings = buildings,
+                    isLoading = false
+                )
+            }.collect { newState ->
+                _state.value = newState
             }
         }
     }
@@ -89,9 +86,8 @@ class PaymentHistoryViewModel @Inject constructor(
     }
 
     fun refresh() {
-        _state.update { it.copy(isRefreshing = true) }
-        _refreshTrigger.value++
         viewModelScope.launch {
+            _state.update { it.copy(isRefreshing = true) }
             delay(900)
             _state.update { it.copy(isRefreshing = false) }
         }

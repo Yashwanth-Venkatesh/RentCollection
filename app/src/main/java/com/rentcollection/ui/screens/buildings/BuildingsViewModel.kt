@@ -37,7 +37,6 @@ class BuildingsViewModel @Inject constructor(
 
     private val _selectedMonth = MutableStateFlow(Calendar.getInstance().get(Calendar.MONTH) + 1)
     private val _selectedYear = MutableStateFlow(Calendar.getInstance().get(Calendar.YEAR))
-    private val _refreshTrigger = MutableStateFlow(0)
     private val _searchQuery = MutableStateFlow("")
 
     private val _state = MutableStateFlow(BuildingsState())
@@ -49,32 +48,44 @@ class BuildingsViewModel @Inject constructor(
 
     private fun observeData() {
         viewModelScope.launch {
-            combine(_selectedMonth, _selectedYear, _refreshTrigger, _searchQuery) { m, y, _, q ->
+            combine(_selectedMonth, _selectedYear, _searchQuery) { m, y, q ->
                 Triple(m, y, q)
             }.collectLatest { (month, year, query) ->
                 combine(
                     buildingRepository.getBuildingsFlow(),
+                    buildingRepository.getAllHousesFlow(),
                     paymentRepository.getPaymentsForMonthFlow(month, year)
-                ) { buildings, payments ->
+                ) { buildings, allHouses, payments ->
                     val filtered = if (query.isBlank()) buildings
                     else buildings.filter { it.name.contains(query, ignoreCase = true) }
                     filtered.map { b ->
+                        val bHouses = allHouses.filter { it.buildingId == b.buildingId }
                         val bPayments = payments.filter { it.buildingId == b.buildingId }
+                        var collected = 0.0
+                        var pending = 0.0
+                        bHouses.forEach { house ->
+                            val payment = bPayments.find { it.houseId == house.houseId }
+                            when {
+                                payment != null && payment.isReceived -> collected += payment.amount
+                                payment != null && !payment.isReceived -> pending += payment.amount
+                                else -> pending += house.rentAmount
+                            }
+                        }
                         BuildingWithStats(
                             building = b,
-                            collected = bPayments.filter { it.isReceived }.sumOf { it.amount },
-                            pending = bPayments.filter { !it.isReceived }.sumOf { it.amount },
+                            collected = collected,
+                            pending = pending,
                             paymentCount = bPayments.size
                         )
                     }
                 }.collect { stats ->
-                    _state.value = BuildingsState(
+                    _state.update { it.copy(
                         isLoading = false,
                         buildings = stats,
                         selectedMonth = month,
                         selectedYear = year,
                         searchQuery = query
-                    )
+                    ) }
                 }
             }
         }
@@ -90,9 +101,8 @@ class BuildingsViewModel @Inject constructor(
     }
 
     fun refresh() {
-        _state.update { it.copy(isRefreshing = true) }
-        _refreshTrigger.value++
         viewModelScope.launch {
+            _state.update { it.copy(isRefreshing = true) }
             delay(900)
             _state.update { it.copy(isRefreshing = false) }
         }

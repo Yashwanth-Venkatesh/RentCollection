@@ -7,6 +7,7 @@ import com.rentcollection.data.model.House
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -18,18 +19,20 @@ class BuildingRepository @Inject constructor(
 
     // ── Buildings ──────────────────────────────────────────────────────────────
 
-    fun getBuildingsFlow(): Flow<List<Building>> = callbackFlow {
+    fun getBuildingsFlow(): Flow<List<Building>> = callbackFlow<List<Building>> {
         val listener = firestore.collection("buildings")
             .addSnapshotListener { snap, err ->
-                if (err != null) { close(err); return@addSnapshotListener }
-                trySend(snap?.toObjects(Building::class.java) ?: emptyList())
+                if (err != null) return@addSnapshotListener
+                trySend(snap?.documents?.mapNotNull { doc ->
+                    doc.toObject(Building::class.java)?.copy(buildingId = doc.id)
+                } ?: emptyList())
             }
         awaitClose { listener.remove() }
-    }
+    }.onStart { emit(emptyList()) }
 
     suspend fun getBuilding(buildingId: String): Building? = try {
         firestore.collection("buildings").document(buildingId).get().await()
-            .toObject(Building::class.java)
+            .let { doc -> doc.toObject(Building::class.java)?.copy(buildingId = doc.id) }
     } catch (_: Exception) { null }
 
     suspend fun addBuilding(building: Building): String {
@@ -46,43 +49,49 @@ class BuildingRepository @Inject constructor(
         firestore.collection("buildings").document(buildingId).delete().await()
     }
 
-fun getAllHousesFlow(): Flow<List<House>> = callbackFlow {
+    fun getAllHousesFlow(): Flow<List<House>> = callbackFlow<List<House>> {
         val listener = firestore.collectionGroup("houses")
             .addSnapshotListener { snap, err ->
-                if (err != null) { close(err); return@addSnapshotListener }
-                trySend(snap?.toObjects(House::class.java) ?: emptyList())
+                if (err != null) return@addSnapshotListener
+                trySend(snap?.documents?.mapNotNull { doc ->
+                    doc.toObject(House::class.java)?.copy(houseId = doc.id)
+                } ?: emptyList())
             }
         awaitClose { listener.remove() }
-    }
+    }.onStart { emit(emptyList()) }
 
-    fun getAllFloorsFlow(): Flow<List<Floor>> = callbackFlow {
+    fun getAllFloorsFlow(): Flow<List<Floor>> = callbackFlow<List<Floor>> {
         val listener = firestore.collectionGroup("floors")
             .addSnapshotListener { snap, err ->
-            if (err != null) { close(err); return@addSnapshotListener }
-                trySend(snap?.toObjects(Floor::class.java) ?: emptyList())
+                if (err != null) return@addSnapshotListener
+                trySend(snap?.documents?.mapNotNull { doc ->
+                    doc.toObject(Floor::class.java)?.copy(floorId = doc.id)
+                } ?: emptyList())
             }
         awaitClose { listener.remove() }
-    }
+    }.onStart { emit(emptyList()) }
 
     // ── Floors ─────────────────────────────────────────────────────────────────
 
-    fun getFloorsFlow(buildingId: String): Flow<List<Floor>> = callbackFlow {
+    fun getFloorsFlow(buildingId: String): Flow<List<Floor>> = callbackFlow<List<Floor>> {
         val listener = firestore.collection("buildings").document(buildingId)
             .collection("floors")
             .addSnapshotListener { snap, err ->
-                if (err != null) { close(err); return@addSnapshotListener }
-                val floors = (snap?.toObjects(Floor::class.java) ?: emptyList())
-                    .sortedBy { it.floorNumber }
+                if (err != null) return@addSnapshotListener
+                val floors = (snap?.documents?.mapNotNull { doc ->
+                    doc.toObject(Floor::class.java)?.copy(floorId = doc.id)
+                } ?: emptyList()).sortedBy { it.floorNumber }
                 trySend(floors)
             }
         awaitClose { listener.remove() }
-    }
+    }.onStart { emit(emptyList()) }
 
     suspend fun getFloorsOnce(buildingId: String): List<Floor> = try {
         firestore.collection("buildings").document(buildingId)
             .collection("floors").get().await()
-            .toObjects(Floor::class.java)
-            .sortedBy { it.floorNumber }
+            .documents.mapNotNull { doc ->
+                doc.toObject(Floor::class.java)?.copy(floorId = doc.id)
+            }.sortedBy { it.floorNumber }
     } catch (_: Exception) { emptyList() }
 
     suspend fun addFloor(buildingId: String, floor: Floor): String {
@@ -105,37 +114,39 @@ fun getAllHousesFlow(): Flow<List<House>> = callbackFlow {
     suspend fun getFloor(buildingId: String, floorId: String): Floor? = try {
         firestore.collection("buildings").document(buildingId)
             .collection("floors").document(floorId).get().await()
-            .toObject(Floor::class.java)
+            .let { doc -> doc.toObject(Floor::class.java)?.copy(floorId = doc.id) }
     } catch (_: Exception) { null }
 
     // ── Houses ─────────────────────────────────────────────────────────────────
 
-    fun getHousesFlow(buildingId: String, floorId: String): Flow<List<House>> = callbackFlow {
+    fun getHousesFlow(buildingId: String, floorId: String): Flow<List<House>> = callbackFlow<List<House>> {
         val listener = firestore.collection("buildings").document(buildingId)
             .collection("floors").document(floorId)
             .collection("houses")
             .addSnapshotListener { snap, err ->
-                if (err != null) { close(err); return@addSnapshotListener }
-                val houses = (snap?.toObjects(House::class.java) ?: emptyList())
-                    .sortedBy { it.houseNumber }
+                if (err != null) return@addSnapshotListener
+                val houses = (snap?.documents?.mapNotNull { doc ->
+                    doc.toObject(House::class.java)?.copy(houseId = doc.id)
+                } ?: emptyList()).sortedBy { it.houseNumber }
                 trySend(houses)
             }
         awaitClose { listener.remove() }
-    }
+    }.onStart { emit(emptyList()) }
 
     suspend fun getHousesOnce(buildingId: String, floorId: String): List<House> = try {
         firestore.collection("buildings").document(buildingId)
             .collection("floors").document(floorId)
             .collection("houses").get().await()
-            .toObjects(House::class.java)
-            .sortedBy { it.houseNumber }
+            .documents.mapNotNull { doc ->
+                doc.toObject(House::class.java)?.copy(houseId = doc.id)
+            }.sortedBy { it.houseNumber }
     } catch (_: Exception) { emptyList() }
 
     suspend fun getHouse(buildingId: String, floorId: String, houseId: String): House? = try {
         firestore.collection("buildings").document(buildingId)
             .collection("floors").document(floorId)
             .collection("houses").document(houseId).get().await()
-            .toObject(House::class.java)
+            .let { doc -> doc.toObject(House::class.java)?.copy(houseId = doc.id) }
     } catch (_: Exception) { null }
 
     suspend fun addHouse(buildingId: String, floorId: String, house: House): String {
